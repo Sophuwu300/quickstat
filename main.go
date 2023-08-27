@@ -19,10 +19,15 @@ var (
 	prctFree float64
 )
 
-func errCheck(err error) {
-	if err != nil {
-		os.Exit(1)
+func errCheck(err error, errFunc func() string) bool {
+	if err == nil {
+		return false
 	}
+	print("  An error occurred: " + errFunc())
+	if len(os.Args) > 1 && os.Args[1] == "-d" {
+		print(err.Error() + "\n")
+	}
+	return true
 }
 
 func numFromLine(i int, b []byte, n *float64) int {
@@ -38,11 +43,22 @@ func numFromLine(i int, b []byte, n *float64) int {
 }
 
 func getMem() {
+	errFunc := func() string {
+		prctMem = -1
+		prctBuff = -1
+		prctFree = -1
+		return "Unable to read memory.\n"
+	}
+
 	b := make([]byte, 84)
 	f, err := os.Open("/proc/meminfo")
-	errCheck(err)
+	if errCheck(err, errFunc) {
+		return
+	}
 	_, err = f.Read(b)
-	errCheck(err)
+	if errCheck(err, errFunc) {
+		return
+	}
 	f.Close()
 
 	i := numFromLine(0, b, &totalMem)
@@ -59,41 +75,69 @@ func getMem() {
 	prctFree = freeMem * 100 / totalMem
 }
 
+func findCPUTypeNo(path string, fileName string, comp string) (string, error) {
+	var b = make([]byte, 100)
+	var i int = 0
+	if fileName == "_label" {
+		i = 1
+	}
+	var err error = nil
+	for ; err == nil && string(b[:len(comp)]) != comp; i++ {
+		b, err = os.ReadFile(path + string(i+48) + fileName)
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(i + 48 - 1), nil
+}
+
 func getCPUTemp() {
-
-	isX86 := func(b []byte) bool {
-		if len(b) < 12 {
-			return false
-		}
-		for i, v := range []byte{120, 56, 54, 95, 112, 107, 103, 95, 116, 101, 109, 112} {
-			if b[i] != v {
-				return false
-			}
-		}
-		return true
+	errFunc := func() string {
+		cpuTemp = -1
+		return "Unable to read CPU temperature.\n"
 	}
-
 	var (
-		err error = nil
-		i   int   = 0
-		b         = make([]byte, 12)
+		b         = make([]byte, 2)
+		thrmPath  = "/sys/class/thermal/thermal_zone"
+		hwMonPath = "/sys/class/hwmon/hwmon"
 	)
-	for ; err == nil && !isX86(b); i++ {
-		b, err = os.ReadFile("/sys/class/thermal/thermal_zone" + string(i+48) + "/type")
+	nStr, err := findCPUTypeNo(thrmPath, "/type", "x86_pkg_temp")
+	if err != nil {
+		nStr, err = findCPUTypeNo(hwMonPath, "/name", "k10temp")
+		if errCheck(err, errFunc) {
+			return
+		}
+		nStrHW := nStr
+		nStr, err = findCPUTypeNo(hwMonPath+nStrHW+"/temp", "_label", "Tdie")
+		if errCheck(err, errFunc) {
+			return
+		}
+		b, err = os.ReadFile(hwMonPath + nStrHW + "/temp" + nStr + "_input")
+	} else {
+		b, err = os.ReadFile(thrmPath + nStr + "/temp")
 	}
-	errCheck(err)
-	b, err = os.ReadFile("/sys/class/thermal/thermal_zone" + string(i+48-1) + "/temp")
-	errCheck(err)
+	if errCheck(err, errFunc) {
+		return
+	}
 	cpuTemp = (int(b[0])-48)*10 + int(b[1]) - 48
 }
 
 func getCPU() {
-	readStat := func(n *[4]float64) {
+	readStat := func(n *[4]float64) bool {
+		errFunc := func() string {
+			cpuLoad = -1
+			return "Unable to read cpu load.\n"
+		}
+
 		b := make([]byte, 100)
 		f, err := os.Open("/proc/stat")
-		errCheck(err)
+		if errCheck(err, errFunc) {
+			return true
+		}
 		_, err = f.Read(b)
-		errCheck(err)
+		if errCheck(err, errFunc) {
+			return true
+		}
 		f.Close()
 		for i, j := 6, 0; j < 4; i++ {
 			if b[i] >= 48 && b[i] <= 57 {
@@ -102,17 +146,29 @@ func getCPU() {
 				j++
 			}
 		}
+		return false
 	}
 	var a, b [4]float64
-	readStat(&a)
+	if readStat(&a) {
+		return
+	}
 	time.Sleep(1 * time.Second)
-	readStat(&b)
+	if readStat(&b) {
+		return
+	}
 	cpuLoad = int(100 * ((b[0] + b[1] + b[2]) - (a[0] + a[1] + a[2])) / ((b[0] + b[1] + b[2] + b[3]) - (a[0] + a[1] + a[2] + a[3])))
 }
 
 func getMHz() {
 	b, err := os.ReadFile("/proc/cpuinfo")
-	errCheck(err)
+
+	if errCheck(err, func() string {
+		cpuMHz = -1
+		return "Unable to read cpu MHz.\n"
+	}) {
+		return
+	}
+
 	var tmp, j int
 	cpuMHz = 0
 	for i := 0; i < len(b); i++ {
@@ -134,11 +190,13 @@ func round(f float64) string {
 	var n int = int(f*1000) % 1000
 	var s string = ""
 
-	for i := 0; i < 3; i++ {
-		if n%10 >= 5 {
-			n += 10
+	if n != 0 {
+		for i := 0; i < 3; i++ {
+			if n%10 >= 5 {
+				n += 10
+			}
+			n /= 10
 		}
-		n /= 10
 	}
 
 	n = int(f) + n
@@ -150,10 +208,28 @@ func round(f float64) string {
 	return s
 }
 
+func printNWithErr(in interface{}) string {
+	var n float64
+	switch v := in.(type) {
+	case int:
+		n = float64(v)
+		break
+	case float64:
+		n = v
+		break
+	default:
+		return "Err"
+	}
+	if n < 0 {
+		return "Err"
+	}
+	return round(n)
+}
+
 func main() {
 	go getMem()
-	//go getCPUTemp()
+	go getCPUTemp()
 	go getMHz()
 	getCPU()
-	println("   Mem:  ", round(prctMem), "% USED  ", round(prctBuff), "% BUFF  ", round(prctFree), "% FREE   CPU:  ", cpuLoad, "%  ", cpuTemp, "C  ", cpuMHz, "MHz")
+	println("   Mem:  ", printNWithErr(prctMem), "% USED  ", printNWithErr(prctBuff), "% BUFF  ", printNWithErr(prctFree), "% FREE   CPU:  ", printNWithErr(cpuLoad), "%  ", printNWithErr(cpuTemp), "C  ", printNWithErr(cpuMHz), "MHz")
 }
