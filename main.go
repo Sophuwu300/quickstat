@@ -200,6 +200,9 @@ func round(f float64) string {
 	}
 
 	n = int(f) + n
+	if n == 0 {
+		return "0"
+	}
 	for n > 0 {
 		s = string(n%10+48) + s
 		n /= 10
