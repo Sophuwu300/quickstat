@@ -5,3 +5,5 @@ Linux shows the temperature information in different ways depending on the CPU. 
 Running the program results in an output similar to this:
 
 ```   Mem: 23 % USED   39 % BUFF   38 % FREE   CPU: 10 %   34 C   2665 MHz```
+
+Compiled binaries with [gpg signitures](https://sophuwu.site/pgp.txt) are available at [sophuwu.site](https://sophuwu.site/quickstat/).
