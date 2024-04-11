@@ -64,18 +64,27 @@ func (b Bytes) String() string {
 	if CONFIG.Unit == 0 {
 
 	}
+	return fmt.Sprint(b)
 }
 
-type NetInfo struct {
+type Net struct {
 	Tx Bytes
 	Rx Bytes
 }
 type HWInfo struct {
 	CPU CPU
-	MEM MEMInfo
-	NET NetInfo
+	MEM MEM
+	NET Net
 }
 
+func (this *HWInfo) update() {
+	done := make(chan bool)
+	go this.CPU.update(done)
+	go this.MEM.update(done)
+	<-done
+	<-done
+	// i.NET.update()
+}
 func (i *HWInfo) String() string {
 	if CONFIG.Json {
 		b, _ := json.Marshal(i)
@@ -85,53 +94,16 @@ func (i *HWInfo) String() string {
 
 }
 
-func round(f float64) string {
-	var n int = int(f*1000) % 1000
-	var s string = ""
-
-	if n != 0 {
-		for i := 0; i < 3; i++ {
-			if n%10 >= 5 {
-				n += 10
-			}
-			n /= 10
-		}
-	}
-
-	n = int(f) + n
-	if n == 0 {
-		return "0"
-	}
-	for n > 0 {
-		s = string(n%10+48) + s
-		n /= 10
-	}
-
-	return s
-}
-
-func printNWithErr(in interface{}) string {
-	var n float64
-	switch v := in.(type) {
-	case int:
-		n = float64(v)
-		break
-	case float64:
-		n = v
-		break
-	default:
-		return "Err"
-	}
-	if n < 0 {
-		return "Err"
-	}
-	return round(n)
+func Is(err error) bool {
+	return err != nil
 }
 
 func main() {
-	go getMem()
-	go getCPUTemp()
-	go getMHz()
-	getCPU()
-	println("   Mem:  ", printNWithErr(prctMem), "% USED  ", printNWithErr(prctBuff), "% BUFF  ", printNWithErr(prctFree), "% FREE   CPU:  ", printNWithErr(cpuLoad), "%  ", printNWithErr(cpuTemp), "C  ", printNWithErr(cpuMHz), "MHz")
+	var HW HWInfo
+	HW.update()
+	fmt.Println(HW)
+	// go getCPUTemp()
+	// go getMHz()
+	// getCPU()
+	// println("   Mem:  ", printNWithErr(prctMem), "% USED  ", printNWithErr(prctBuff), "% BUFF  ", printNWithErr(prctFree), "% FREE   CPU:  ", printNWithErr(cpuLoad), "%  ", printNWithErr(cpuTemp), "C  ", printNWithErr(cpuMHz), "MHz")
 }

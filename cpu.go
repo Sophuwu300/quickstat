@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -66,44 +67,37 @@ func (cpu *CPU) loadTemp() {
 }
 func (c *CPU) loadMHz() {
 	b, err := os.ReadFile("/proc/cpuinfo")
-
-	if errCheck(err, func() string {
-		cpuMHz = -1
-		return "Unable to read cpu MHz.\n"
-	}) {
+	if Is(err) {
 		return
 	}
-
-	var tmp, j int
-	c.MHz = 0
-	for i := 0; i < len(b); i++ {
-		if string(b[i:i+7]) == "cpu MHz" {
-			tmp = 0
-			for ; i < len(b) && b[i] != 10 && b[i] != '.'; i++ {
-				if b[i] >= 48 && b[i] <= 57 {
-					tmp = tmp*10 + int(b[i]) - 48
-				}
+	var ns numSeeker
+	var Ipart, Fpart, n float64
+	for _, v := range bytes.Split(b, []byte("\n")) {
+		Ipart = 0
+		Fpart = 0
+		if bytes.HasPrefix(v, []byte("cpu MHz")) {
+			ns.Init(v)
+			Ipart = float64(ns.GetNum())
+			Fpart = float64(ns.GetNum())
+			for Fpart >= 1 {
+				Fpart /= 10
 			}
-			cpuMHz += tmp
-			j++
+			c.MHz += Ipart + Fpart
+			n++
 		}
 	}
-	c.MHz /= j
+	c.MHz /= n
 }
 func (c *CPU) loadUsage() {
 	readStat := func(n *[4]float64) bool {
-		errFunc := func() string {
-			cpuLoad = -1
-			return "Unable to read cpu load.\n"
-		}
 
 		b := make([]byte, 100)
 		f, err := os.Open("/proc/stat")
-		if errCheck(err, errFunc) {
+		if Is(err) {
 			return true
 		}
 		_, err = f.Read(b)
-		if errCheck(err, errFunc) {
+		if Is(err) {
 			return true
 		}
 		f.Close()
@@ -126,10 +120,11 @@ func (c *CPU) loadUsage() {
 	}
 	c.Load = ((b[0] + b[1] + b[2]) - (a[0] + a[1] + a[2])) / ((b[0] + b[1] + b[2] + b[3]) - (a[0] + a[1] + a[2] + a[3]))
 }
-func (c *CPU) update() {
+func (c *CPU) update(done chan bool) {
 	go c.loadMHz()
 	go c.loadTemp()
 	c.loadUsage()
+	done <- true
 }
 func (c *CPU) GHz() float64 {
 	return c.MHz / 1000
@@ -146,9 +141,4 @@ func (c *CPU) String() string {
 		return string(b)
 	}
 	return fmt.Sprintf("%.1f %c %.2f GHz %s\n", c.Load*100, '%', c.GHz(), c.TempStr())
-}
-func Cpu() CPU {
-	var cpu CPU
-	cpu.update()
-	return cpu
 }

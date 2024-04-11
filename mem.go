@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 )
 
@@ -59,7 +58,7 @@ func (n *numSeeker) GetNums() []uint64 {
 	return nums
 }
 
-func (m *MEM) update() {
+func (m *MEM) update(done chan bool) {
 
 	b := make([]byte, 140)
 	f, _ := os.Open("/proc/meminfo")
@@ -70,5 +69,9 @@ func (m *MEM) update() {
 	f.Close()
 	var seeker numSeeker
 	seeker.Init(b)
-	fmt.Println(seeker.GetNums())
+	m.Total = Bytes(seeker.GetNum())
+	m.Free = Bytes(seeker.GetNum())
+	m.Avail = Bytes(seeker.GetNum())
+	m.Buffer = Bytes(seeker.GetNum() + seeker.GetNum())
+	done <- true
 }
