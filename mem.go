@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 )
 
@@ -58,8 +60,7 @@ func (n *numSeeker) GetNums() []uint64 {
 	return nums
 }
 
-func (m *MEM) update(done chan bool) {
-
+func (m *MEM) update() {
 	b := make([]byte, 140)
 	f, _ := os.Open("/proc/meminfo")
 	_, err := f.Read(b)
@@ -73,5 +74,21 @@ func (m *MEM) update(done chan bool) {
 	m.Free = Bytes(seeker.GetNum())
 	m.Avail = Bytes(seeker.GetNum())
 	m.Buffer = Bytes(seeker.GetNum() + seeker.GetNum())
-	done <- true
+}
+func (m *MEM) Percent() *MEM {
+	var m2 MEM
+	fac := Bytes(10000)
+	m2.Avail = m.Avail * fac / m.Total
+	m2.Free = m.Free * fac / m.Total
+	m2.Buffer = m.Buffer * fac / m.Total
+	m2.Total = m.Total * fac / m.Total
+	return &m2
+}
+
+func (m *MEM) String() string {
+	if CONFIG.Json {
+		b, _ := json.Marshal(m)
+		return string(b)
+	}
+	return fmt.Sprintf("%s USED  %s BUFF  %s FREE", Bytes(m.Total-m.Avail), m.Buffer, m.Free)
 }

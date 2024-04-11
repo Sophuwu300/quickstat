@@ -15,14 +15,14 @@ var CONFIG = struct {
 	Repeat bool
 	Unit   int
 	Time   time.Duration
-}{false, false, 2, time.Second}
+}{false, false, 0, time.Second}
 
 func Help() {
 	fmt.Printf("Usage: %s [options]\n", os.Args[0])
 	fmt.Println("Options:")
 	fmt.Println("  -j  Output in JSON format")
 	fmt.Println("  -r  Repeat output")
-	fmt.Printf("  -[%s] Use unit\n", SI)
+	fmt.Printf("  -[%s] Print in unit\n", SI)
 	fmt.Println("  -t<n> Set sampling time to n seconds")
 	os.Exit(0)
 }
@@ -60,38 +60,58 @@ func init() {
 
 type Bytes uint64
 
-func (b Bytes) String() string {
-	if CONFIG.Unit == 0 {
-
+func (b Bytes) Unit() string {
+	n := float64(b)
+	if SI[CONFIG.Unit] == '%' {
+		n /= 100
 	}
-	return fmt.Sprint(b)
+	for i := 1; i < CONFIG.Unit; i++ {
+		n /= 1024
+	}
+	f := "%.0f"
+	if n < 100 {
+		f = "%.2f"
+	}
+	return fmt.Sprintf(f+" %c", n, SI[CONFIG.Unit])
 }
 
-type Net struct {
-	Tx Bytes
-	Rx Bytes
+func (b Bytes) String() string {
+	if CONFIG.Json {
+		json.Marshal(b * 1024)
+	}
+	return b.Unit()
 }
+
 type HWInfo struct {
-	CPU CPU
-	MEM MEM
-	NET Net
+	Time int64 `json:"UnixMilli"`
+	CPU  CPU   `json:"CPU"`
+	MEM  MEM   `json:"MEM"`
 }
 
-func (this *HWInfo) update() {
+func (this *HWInfo) Update() {
 	done := make(chan bool)
-	go this.CPU.update(done)
-	go this.MEM.update(done)
+	go func() {
+		this.CPU.update()
+		done <- true
+	}()
+	go func() {
+		this.MEM.update()
+		done <- true
+	}()
 	<-done
 	<-done
-	// i.NET.update()
+	this.Time = time.Now().UnixMilli()
 }
-func (i *HWInfo) String() string {
+func (i HWInfo) String() string {
 	if CONFIG.Json {
 		b, _ := json.Marshal(i)
 		return string(b)
 	}
-	return fmt.Sprintf("%s %s %s\n", i.CPU, i.MEM, i.NET)
-
+	s := i.MEM.String()
+	if SI[CONFIG.Unit] == '%' {
+		s = i.MEM.Percent().String()
+	}
+	return fmt.Sprintf("MEM: %s | CPU: %s", s, i.CPU.String())
 }
 
 func Is(err error) bool {
@@ -99,11 +119,9 @@ func Is(err error) bool {
 }
 
 func main() {
-	var HW HWInfo
-	HW.update()
-	fmt.Println(HW)
-	// go getCPUTemp()
-	// go getMHz()
-	// getCPU()
-	// println("   Mem:  ", printNWithErr(prctMem), "% USED  ", printNWithErr(prctBuff), "% BUFF  ", printNWithErr(prctFree), "% FREE   CPU:  ", printNWithErr(cpuLoad), "%  ", printNWithErr(cpuTemp), "C  ", printNWithErr(cpuMHz), "MHz")
+	var hw HWInfo
+	for do := true; do; do = CONFIG.Repeat {
+		hw.Update()
+		fmt.Println(hw)
+	}
 }

@@ -8,9 +8,11 @@ import (
 	"time"
 )
 
+type float float32
+
 type CPU struct {
-	Load float64
-	MHz  float64
+	Load float
+	MHz  float
 	Temp int
 }
 
@@ -71,14 +73,14 @@ func (c *CPU) loadMHz() {
 		return
 	}
 	var ns numSeeker
-	var Ipart, Fpart, n float64
+	var Ipart, Fpart, n float
 	for _, v := range bytes.Split(b, []byte("\n")) {
 		Ipart = 0
 		Fpart = 0
 		if bytes.HasPrefix(v, []byte("cpu MHz")) {
 			ns.Init(v)
-			Ipart = float64(ns.GetNum())
-			Fpart = float64(ns.GetNum())
+			Ipart = float(ns.GetNum())
+			Fpart = float(ns.GetNum())
 			for Fpart >= 1 {
 				Fpart /= 10
 			}
@@ -89,7 +91,7 @@ func (c *CPU) loadMHz() {
 	c.MHz /= n
 }
 func (c *CPU) loadUsage() {
-	readStat := func(n *[4]float64) bool {
+	readStat := func(n *[4]float) bool {
 
 		b := make([]byte, 100)
 		f, err := os.Open("/proc/stat")
@@ -103,14 +105,14 @@ func (c *CPU) loadUsage() {
 		f.Close()
 		for i, j := 6, 0; j < 4; i++ {
 			if b[i] >= 48 && b[i] <= 57 {
-				n[j] = n[j]*10 + float64(b[i]) - 48
+				n[j] = n[j]*10 + float(b[i]) - 48
 			} else if b[i] == ' ' {
 				j++
 			}
 		}
 		return false
 	}
-	var a, b [4]float64
+	var a, b [4]float
 	if readStat(&a) {
 		return
 	}
@@ -120,25 +122,27 @@ func (c *CPU) loadUsage() {
 	}
 	c.Load = ((b[0] + b[1] + b[2]) - (a[0] + a[1] + a[2])) / ((b[0] + b[1] + b[2] + b[3]) - (a[0] + a[1] + a[2] + a[3]))
 }
-func (c *CPU) update(done chan bool) {
-	go c.loadMHz()
-	go c.loadTemp()
+func (c *CPU) update() {
+	c.loadMHz()
+	c.loadTemp()
 	c.loadUsage()
-	done <- true
 }
-func (c *CPU) GHz() float64 {
-	return c.MHz / 1000
+func (c *CPU) GHzStr() string {
+	return fmt.Sprintf("%.2f GHz", c.MHz/1000)
+}
+func (c *CPU) LoadStr() string {
+	return fmt.Sprintf("%.1f %c", c.Load*100, '%')
 }
 func (c *CPU) TempStr() string {
 	if c.Temp == -100 {
 		return ""
 	}
-	return fmt.Sprintf("%d °C", c.Temp)
+	return fmt.Sprintf("%d C", c.Temp)
 }
 func (c *CPU) String() string {
 	if CONFIG.Json {
 		b, _ := json.Marshal(c)
 		return string(b)
 	}
-	return fmt.Sprintf("%.1f %c %.2f GHz %s\n", c.Load*100, '%', c.GHz(), c.TempStr())
+	return fmt.Sprintf("%6.6s %8.8s %5.5s", c.LoadStr(), c.GHzStr(), c.TempStr())
 }
