@@ -37,6 +37,9 @@ func init() {
 	if len(os.Args) > 1 {
 		for _, arg := range os.Args[1:] {
 			if strings.Count(arg, "-") < 2 {
+				if strings.ContainsAny(arg, "h?") {
+					Help()
+				}
 				if strings.Contains(arg, "j") {
 					CONFIG.Json = true
 				}
